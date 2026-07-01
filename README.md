@@ -1,191 +1,97 @@
-# Gojo Hand Tracking System
+# Gojo Hand Tracking
 
-![Python](https://img.shields.io/badge/Python-3.8%2B-blue?logo=python)
-![OpenCV](https://img.shields.io/badge/OpenCV-4.8%2B-green?logo=opencv)
+**Point your hand. Click with a pinch. No mouse.**
+
+<!-- hero: 1600x600 screenshot of the live webcam view with 21-point hand skeleton overlay -->
+
+![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?logo=python&logoColor=white)
+![OpenCV](https://img.shields.io/badge/OpenCV-4.8%2B-5C3EE8?logo=opencv&logoColor=white)
 ![MediaPipe](https://img.shields.io/badge/MediaPipe-0.10%2B-orange)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
-A real-time hand tracking and Human-Computer Interaction (HCI) pipeline that translates physical hand gestures into digital control signals using MediaPipe and OpenCV.
+A real-time hand-tracking pipeline that turns a webcam feed into a gesture-driven HCI controller. MediaPipe extracts 21 3D landmarks per hand; a smoothing filter converts them into cursor coordinates and pinch-to-click events you can wire into any application.
 
 ---
 
-## What It Does
+## Why this exists
 
-The system captures a live webcam feed, detects up to two hands per frame, and extracts 21 3D landmark points per hand using MediaPipe's ML model. Those landmarks are then mapped to normalized control signals — cursor position and click/pinch events — which can drive mouse emulation, presentation control, or any other gesture-based interface.
-
-A producer-consumer threading architecture keeps the display loop running smoothly even when ML inference momentarily slows down.
+Every hand-tracking demo online is a toy — grab code from a tutorial, run it, watch it jitter and drop frames. Gojo is the version that survives real use: producer/consumer threading so ML inference never blocks the display loop, EMA smoothing so the cursor stops shaking, downscaled inference for a real FPS boost, and clean error handling when the camera isn't available. Built as a foundation for gesture-driven interfaces, not a screenshot for LinkedIn.
 
 ---
 
-## Features
-
-- **21-point hand skeleton** — Full landmark extraction (wrist, knuckles, fingertips) in normalised (x, y, z) coordinates.
-- **Pinch-to-click detection** — 3D Euclidean distance between index-finger tip (landmark 8) and thumb tip (landmark 4) triggers a click event below a tunable threshold.
-- **EMA cursor smoothing** — Exponential Moving Average filter eliminates high-frequency jitter from the raw webcam signal.
-- **Producer-Consumer pipeline** — Frame capture and ML inference run on separate daemon threads; the display thread never blocks on camera I/O or model inference.
-- **Resolution downscaling for ML** — Frames are downscaled to 320x240 for inference and the results are projected back onto the full-resolution display frame, giving a large FPS boost with minimal precision loss.
-- **Skeleton visualisation** — All 21 landmarks and the canonical hand-connection skeleton are drawn on the live feed.
-- **Gesture classification** — Three gesture IDs out of the box: Neutral (0), Pinch (1), Open Palm (2).
-- **Graceful camera error handling** — Raises a clear `RuntimeError` when the camera cannot be opened instead of crashing silently.
-
----
-
-## Tech Stack
-
-| Component | Library | Version |
-|-----------|---------|---------|
-| Hand landmark detection | [MediaPipe Hands](https://developers.google.com/mediapipe/solutions/vision/hand_landmarker) | >= 0.10 |
-| Image capture & display | [OpenCV](https://opencv.org/) | >= 4.8 |
-| Numerical operations | [NumPy](https://numpy.org/) | >= 1.24 |
-| Concurrency | Python `threading` + `queue` | stdlib |
-
----
-
-## Installation
-
-### Prerequisites
-
-- Python 3.8 or later
-- A working webcam
-
-### Install Dependencies
+## Try it in 60 seconds
 
 ```bash
+git clone https://github.com/Danush-Aries/Computer_Vision
+cd Computer_Vision
 pip install -r requirements.txt
-```
-
-Or manually:
-
-```bash
-pip install opencv-python>=4.8.0 mediapipe>=0.10.0 numpy>=1.24.0
-```
-
----
-
-## Usage
-
-### Run the Full Optimized Pipeline
-
-```bash
 python main.py
 ```
 
-Press `q` to quit.
-
-### Run the Standalone Tracker Demo
-
-```bash
-python tracker.py
-```
-
-### Use Modules Individually
-
-```python
-from tracker import GojoHandTracker
-from mapper import SpatialMapper
-import cv2
-
-tracker = GojoHandTracker(
-    max_num_hands=1,
-    min_detection_confidence=0.7,
-    min_tracking_confidence=0.5,
-)
-mapper = SpatialMapper(smoothing_factor=0.5)
-
-cap = cv2.VideoCapture(0)
-while cap.isOpened():
-    ok, frame = cap.read()
-    if not ok:
-        break
-
-    frame, hands = tracker.find_hands(frame)
-    frame = tracker.draw_landmarks(frame, hands)
-
-    for hand in hands:
-        signal = mapper.map_to_signal(hand)
-        print(f"Cursor: {signal.cursor_pos}  Pinch: {signal.pinch_active}")
-
-    cv2.imshow("Tracking", frame)
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
-```
+Point your hand at the camera. Pinch index + thumb to click. Press `q` to quit.
 
 ---
 
-## Architecture
+## How it works
 
 ```
-Webcam
-  |
-  v
-[Capture Thread]  ──── frame_queue (maxsize=2) ────> [Processing Thread]
-                                                            |
-                                              MediaPipe Hands (320x240)
-                                                            |
-                                              SpatialMapper (EMA smooth)
-                                                            |
-                                         result_queue (maxsize=2)
-                                                            |
-                                                            v
-                                                   [Display Thread]
-                                              draw_landmarks + overlay
-                                                     cv2.imshow
+webcam
+   |
+   v
++-- producer thread ------+
+|  cv2.VideoCapture       |
+|  frames -> queue        |
++-----------|-------------+
+            v
++-- ML thread ------------+
+|  downscale 320x240      |
+|  MediaPipe Hands (21x3) |
+|  gesture classifier     |
++-----------|-------------+
+            v
++-- display thread -------+
+|  EMA cursor smoothing   |
+|  skeleton overlay       |
+|  pinch-to-click event   |
++-------------------------+
 ```
 
-### Module Overview
-
-| File | Responsibility |
-|------|---------------|
-| `tracker.py` | `GojoHandTracker` — wraps MediaPipe Hands, exposes `find_hands()` and `draw_landmarks()` |
-| `mapper.py` | `SpatialMapper` — coordinate normalisation, EMA smoothing, pinch detection, gesture classification |
-| `main.py` | `OptimizedGojoSystem` — producer-consumer pipeline, display loop, FPS counter |
+Gestures out of the box: Neutral, Pinch (click), Open Palm.
 
 ---
 
-## Configuration
+## Screenshots
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `max_num_hands` | `2` | Maximum simultaneous hands tracked |
-| `min_detection_confidence` | `0.7` | Minimum score to accept a new detection |
-| `min_tracking_confidence` | `0.5` | Minimum score to keep tracking an existing hand |
-| `processing_res` | `(320, 240)` | Resolution used for ML inference |
-| `smoothing_factor` | `0.5` | EMA alpha: 0 = no movement, 1 = no smoothing |
-| `pinch_threshold` | `0.05` | 3D normalised distance below which a pinch is triggered |
+<!-- screenshot: pinch-click.png -->
+<!-- screenshot: skeleton-overlay.png -->
 
 ---
 
-## Running Tests
+## Stack
 
-```bash
-python -m pytest tests/ -v
-```
-
-No camera or GPU required — all tests run with a synthetic black frame and mocked MediaPipe results.
-
----
-
-## Performance Notes
-
-- Typical latency: < 30 ms on a standard laptop CPU.
-- Typical FPS: 30-60+ depending on hardware (downscaling to 320x240 for inference is the main lever).
-- The queue `maxsize=2` deliberately drops stale frames so the system always processes the most recent data rather than building up backlog.
+| Layer | Tech |
+|---|---|
+| Landmark detection | MediaPipe Hands |
+| Video I/O | OpenCV |
+| Math | NumPy |
+| Concurrency | stdlib `threading` + `queue` |
+| Tests | pytest |
 
 ---
 
-## HCI Applications
+## More from Danush
 
-- Virtual mouse and touchless cursor control
-- Gesture-based presentation remote
-- Sterile-environment interfaces (medical, lab, food-safe)
-- Accessibility input devices
-- AR/VR hand interaction prototypes
+Part of a broader stack of AI + security tooling:
 
----
+- [jarvis](https://github.com/Danush-Aries/jarvis) — portable multi-provider AI assistant (voice/web/CLI)
+- [breachintel](https://github.com/Danush-Aries/breachintel) — OSINT breach intelligence aggregator
+- [cve-advisor](https://github.com/Danush-Aries/cve-advisor) — AI-powered CVE triage and patch recommendation
+- [llm-fragility-lab](https://github.com/Danush-Aries/llm-fragility-lab) — adversarial testing lab for LLM robustness
+- [network-intrusion-analyzer](https://github.com/Danush-Aries/network-intrusion-analyzer) — Suricata + Claude AI intrusion triage
+- [autonomous-coding-agent](https://github.com/Danush-Aries/autonomous-coding-agent) — two-agent autonomous coding system
+
+Built by [Dhanush](https://github.com/Danush-Aries) — AI engineering + cybersecurity.
 
 ## License
 
-This project is licensed under the [MIT License](https://opensource.org/licenses/MIT).
+MIT.
