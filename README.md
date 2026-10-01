@@ -2,8 +2,6 @@
 
 **Point your hand. Click with a pinch. No mouse.**
 
-<!-- hero: 1600x600 screenshot of the live webcam view with 21-point hand skeleton overlay -->
-
 ![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.8%2B-5C3EE8?logo=opencv&logoColor=white)
 ![MediaPipe](https://img.shields.io/badge/MediaPipe-0.10%2B-orange)
@@ -57,13 +55,6 @@ webcam
 ```
 
 Gestures out of the box: Neutral, Pinch (click), Open Palm.
-
----
-
-## Screenshots
-
-<!-- screenshot: pinch-click.png -->
-<!-- screenshot: skeleton-overlay.png -->
 
 ---
 
